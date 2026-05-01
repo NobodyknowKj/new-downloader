@@ -1,4 +1,4 @@
-name: 🗑 Clean downloads folder (fast)
+name: 🗑 Clean downloads folder
 
 on:
   workflow_dispatch:
@@ -12,51 +12,17 @@ jobs:
   delete:
     runs-on: ubuntu-latest
     steps:
-      - name: Delete files via GitHub API (no checkout)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          BRANCH: ${{ github.ref_name }}
+      - uses: actions/checkout@v4
+
+      - name: Remove downloads folder and recreate it
         run: |
-          # Get current commit SHA
-          SHA=$(gh api repos/$REPO/git/refs/heads/$BRANCH --jq '.object.sha')
-          
-          # Get current tree SHA
-          TREE_SHA=$(gh api repos/$REPO/git/commits/$SHA --jq '.tree.sha')
-          
-          # Get all files under downloads/ (including subfolders)
-          FILES=$(gh api repos/$REPO/git/trees/$TREE_SHA?recursive=1 --jq '.tree[] | select(.path | startswith("downloads/")) | .path')
-          
-          if [ -z "$FILES" ]; then
-            echo "No files found in downloads/ folder. Exiting."
-            exit 0
-          fi
-          
-          # Build JSON for new tree with deletions
-          TREE_ENTRIES=""
-          while IFS= read -r file; do
-            TREE_ENTRIES="$TREE_ENTRIES{\"path\":\"$file\",\"mode\":null,\"type\":\"blob\",\"sha\":null},"
-          done <<< "$FILES"
-          # Remove trailing comma
-          TREE_ENTRIES="${TREE_ENTRIES%,}"
-          
-          DELETE_JSON="{\"base_tree\":\"$TREE_SHA\",\"tree\":[$TREE_ENTRIES]}"
-          
-          # Create new tree
-          NEW_TREE_SHA=$(echo "$DELETE_JSON" | gh api repos/$REPO/git/trees --input - --jq '.sha')
-          
-          # Create commit
-          COMMIT_MSG="Empty downloads folder [skip ci]"
-          NEW_COMMIT_SHA=$(gh api repos/$REPO/git/commits \
-            -f "message=$COMMIT_MSG" \
-            -f "tree=$NEW_TREE_SHA" \
-            -f "parents[]=$SHA" \
-            --jq '.sha')
-          
-          # Update branch reference
-          gh api repos/$REPO/git/refs/heads/$BRANCH \
-            -X PATCH \
-            -f "sha=$NEW_COMMIT_SHA" \
-            -f "force=false"
-          
-          echo "✅ All files deleted from downloads/"
+          rm -rf downloads
+          mkdir downloads
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add downloads
+          git commit -m "Empty downloads folder [skip ci]" || echo "No changes"
+          git push
